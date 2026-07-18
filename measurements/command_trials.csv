@@ -1,0 +1,3 @@
+trial_id,test_date,app_version,device_profile,command_id,environment,input_variant,expected_result,actual_result,intent_correct,slots_correct,confirmation_shown,action_success,latency_ms,error_class,notes
+001,YYYY-MM-DD,0.1.0,DEVICE-01,MAP-01,quiet,canonical,navigation_home,,TRUE,TRUE,FALSE,,,
+
