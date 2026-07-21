@@ -1,0 +1,11 @@
+case_id,expected_transcript,actual_transcript,expected_intent,actual_intent,action_id,error_label
+DEMO-01,Eve yol tarifi başlat,Eve yol tarifi başlat,MAP_HOME,MAP_HOME,FAKE_MAP_HOME,NONE
+DEMO-02,En yakın eczane ara,En yakın eczane ara,MAP_NEARBY,MAP_NEARBY,FAKE_MAP_NEARBY,NONE
+DEMO-03,Annemi ara,Annemi ara,CALL_CONTACT,CALL_CONTACT,FAKE_CALL_CONTACT,NONE
+DEMO-04,Ayşe'ye gecikeceğim yaz,Ayşe'ye gecikeceğim yaz,MESSAGE_TEXT,MESSAGE_TEXT,FAKE_MESSAGE_TEXT,NONE
+DEMO-05,Spotify'da caz çal,Spotify'da caz çal,PLAY_SPOTIFY,PLAY_SPOTIFY,FAKE_PLAY_SPOTIFY,NONE
+DEMO-06,YouTube'da Kotlin dersi ara,YouTube'da Kotlin dersi ara,SEARCH_YOUTUBE,SEARCH_YOUTUBE,FAKE_SEARCH_YOUTUBE,NONE
+DEMO-07,WhatsApp'ı aç,WhatsApp'ı aç,OPEN_APP,OPEN_APP,FAKE_OPEN_APP,NONE
+DEMO-08,Kamerayı aç,Kamerayı aç,OPEN_CAMERA,OPEN_CAMERA,FAKE_OPEN_CAMERA,NONE
+DEMO-09,Feneri aç,Feneri aç,TORCH_ON,TORCH_ON,FAKE_TORCH_ON,NONE
+DEMO-10,10 dakikalık zamanlayıcı kur,10 dakikalık zamanlayıcı kur,SET_TIMER,SET_TIMER,FAKE_SET_TIMER,NONE

@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,8 @@ import androidx.core.content.ContextCompat
 import com.kone.assistant.audio.AudioCapture
 import com.kone.assistant.audio.CaptureResult
 import com.kone.assistant.audio.MicrophoneForegroundService
+import com.kone.assistant.ptt.PushToTalkController
+import com.kone.assistant.stt.SttEvent
 import java.io.File
 import java.util.Locale
 
@@ -88,8 +92,41 @@ class MainActivity : ComponentActivity() {
         var partialText by remember { mutableStateOf("") }
         var finalText by remember { mutableStateOf("") }
         var finalLatencyMs by remember { mutableLongStateOf(0L) }
+        var pttRecording by remember { mutableStateOf(false) }
+        var intentText by remember { mutableStateOf("—") }
+        var actionText by remember { mutableStateOf("—") }
         var sampleNumber by remember { mutableIntStateOf(existingSampleCount() + 1) }
         val results = remember { mutableStateListOf<CaptureResult>() }
+
+        val pushToTalk = remember {
+            PushToTalkController(
+                context = this,
+                onSttEvent = { event ->
+                    runOnUiThread {
+                        when (event) {
+                            is SttEvent.ModelLoading -> modelStatus = event.message
+                            is SttEvent.ModelReady -> modelStatus = "Model hazır · ${event.loadMs} ms"
+                            is SttEvent.Partial -> partialText = event.text
+                            is SttEvent.Final -> {
+                                finalText = event.text.ifBlank { "(anlaşılan kelime yok)" }
+                                partialText = ""
+                                finalLatencyMs = event.latencyMs
+                            }
+                            is SttEvent.Error -> modelStatus = "STT hatası: ${event.message}"
+                        }
+                    }
+                },
+                onProgress = { progress -> runOnUiThread { level = progress.level; elapsedMs = progress.elapsedMs } },
+                onPipelineResult = { result ->
+                    runOnUiThread {
+                        intentText = "${result.intent.id} · confidence ${"%.2f".format(Locale.US, result.intent.confidence.score)} · ${result.intent.reason.code}" +
+                            result.intent.slots.joinToString(prefix = if (result.intent.slots.isEmpty()) "" else " · ") { "${it.name}=${it.value}" }
+                        actionText = result.action.summary
+                    }
+                },
+                onError = { message -> runOnUiThread { status = message; pttRecording = false } },
+            )
+        }
 
         capture = remember {
             AudioCapture(
@@ -128,6 +165,7 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(Unit) { onDispose { if (capture.isRecording) capture.stop() } }
+        DisposableEffect(pushToTalk) { onDispose { pushToTalk.close() } }
         DisposableEffect(Unit) {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
@@ -196,6 +234,9 @@ class MainActivity : ComponentActivity() {
             partialText = partialText,
             finalText = finalText,
             finalLatencyMs = finalLatencyMs,
+            pttRecording = pttRecording,
+            intentText = intentText,
+            actionText = actionText,
             nextSample = sampleNumber,
             results = results,
             onRequestPermission = { permissionRequested = true; permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
@@ -205,6 +246,22 @@ class MainActivity : ComponentActivity() {
             onStartSample = { if (sampleNumber <= 5) startCapture("sample_$sampleNumber.pcm") },
             onStartStability = { startCapture("stability_30s.pcm", 30_000) },
             onStop = { stopHandler.removeCallbacksAndMessages(null); capture.stop() },
+            onPttPress = {
+                elapsedMs = 0
+                level = 0f
+                finalText = ""
+                intentText = "—"
+                actionText = "—"
+                status = "Dinliyorum; konuş ve düğmeyi bırak"
+                pushToTalk.press()
+                pttRecording = pushToTalk.isRecording
+            },
+            onPttRelease = {
+                pushToTalk.release()
+                pttRecording = false
+                level = 0f
+                status = "Konuşma işleniyor"
+            },
             onStartForegroundService = { startForegroundListening() },
             onStopForegroundService = {
                 stopService(Intent(this, MicrophoneForegroundService::class.java))
@@ -240,6 +297,9 @@ private fun AudioScreenContent(
     partialText: String,
     finalText: String,
     finalLatencyMs: Long,
+    pttRecording: Boolean,
+    intentText: String,
+    actionText: String,
     nextSample: Int,
     results: List<CaptureResult>,
     onRequestPermission: () -> Unit,
@@ -247,6 +307,8 @@ private fun AudioScreenContent(
     onStartSample: () -> Unit,
     onStartStability: () -> Unit,
     onStop: () -> Unit,
+    onPttPress: () -> Unit,
+    onPttRelease: () -> Unit,
     onStartForegroundService: () -> Unit,
     onStopForegroundService: () -> Unit,
 ) {
@@ -264,6 +326,8 @@ private fun AudioScreenContent(
                     Text("Geçici: ${partialText.ifBlank { "—" }}")
                     Text("Sonuç: ${finalText.ifBlank { "—" }}")
                     if (finalLatencyMs > 0) Text("Sonuç gecikmesi: $finalLatencyMs ms")
+                    Text("Intent: $intentText")
+                    Text("Sahte action: $actionText")
                 }
             }
 
@@ -275,20 +339,26 @@ private fun AudioScreenContent(
                 Text("Süre: %.1f sn".format(Locale.US, elapsedMs / 1000.0))
                 LinearProgressIndicator(progress = { level }, modifier = Modifier.fillMaxWidth())
                 LevelWave(level)
+                Button(
+                    onClick = { },
+                    modifier = Modifier.fillMaxWidth().pointerInput(onPttPress, onPttRelease) {
+                        detectTapGestures(
+                            onPress = {
+                                onPttPress()
+                                tryAwaitRelease()
+                                onPttRelease()
+                            }
+                        )
+                    },
+                ) {
+                    Text(if (pttRecording) "Dinliyorum… bırak" else "Konuşmak için basılı tut")
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (recording) {
                         Button(onClick = onStop) { Text("Durdur") }
                     } else {
                         Button(onClick = onStartSample, enabled = nextSample <= 5) { Text("Örnek $nextSample başlat") }
                         Button(onClick = onStartStability) { Text("30 sn test") }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onStartForegroundService, enabled = !recording) {
-                        Text("Kilit ekranı dinlemesini başlat")
-                    }
-                    Button(onClick = onStopForegroundService, enabled = !recording) {
-                        Text("Servisi durdur")
                     }
                 }
             }
