@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -44,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -339,9 +342,11 @@ private fun AudioScreenContent(
                 Text("Süre: %.1f sn".format(Locale.US, elapsedMs / 1000.0))
                 LinearProgressIndicator(progress = { level }, modifier = Modifier.fillMaxWidth())
                 LevelWave(level)
-                Button(
-                    onClick = { },
-                    modifier = Modifier.fillMaxWidth().pointerInput(onPttPress, onPttRelease) {
+                Surface(
+                    color = if (pttRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    contentColor = if (pttRecording) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth().height(56.dp).pointerInput(onPttPress, onPttRelease) {
                         detectTapGestures(
                             onPress = {
                                 onPttPress()
@@ -351,7 +356,9 @@ private fun AudioScreenContent(
                         )
                     },
                 ) {
-                    Text(if (pttRecording) "Dinliyorum… bırak" else "Konuşmak için basılı tut")
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(if (pttRecording) "Dinliyorum… bırak" else "Konuşmak için basılı tut")
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (recording) {

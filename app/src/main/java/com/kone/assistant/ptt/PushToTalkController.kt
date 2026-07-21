@@ -54,10 +54,13 @@ class PushToTalkController(
 
     fun press() {
         if (capture.isRecording) return
+        logMetric("ptt_press")
         capture.start("ptt_${System.currentTimeMillis()}.pcm")
+        logMetric("ptt_capture_started recording=${capture.isRecording}")
     }
 
     fun release() {
+        logMetric("ptt_release recording=${capture.isRecording}")
         if (capture.isRecording) capture.stop()
     }
 
