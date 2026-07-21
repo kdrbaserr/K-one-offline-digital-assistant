@@ -1,0 +1,11 @@
+{
+  "id": "vosk-model-small-tr-0.3",
+  "version": "0.3",
+  "language": "tr",
+  "archive": "models/vosk-model-small-tr-0.3.zip",
+  "archiveBytes": 36855784,
+  "sha256": "8c8d07cec1bce31add14967c16891c84152cdf76d391e33c08278119b9ea96e5",
+  "license": "Apache-2.0",
+  "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+  "source": "https://alphacephei.com/vosk/models/vosk-model-small-tr-0.3.zip"
+}

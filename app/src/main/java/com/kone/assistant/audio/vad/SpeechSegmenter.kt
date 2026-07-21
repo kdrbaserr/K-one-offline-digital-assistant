@@ -21,6 +21,9 @@ class SpeechSegmenter(
     private val detector: VoiceActivityDetector,
     private val config: SpeechSegmenterConfig = SpeechSegmenterConfig(),
     private val onSegment: (SpeechSegment) -> Unit,
+    private val onSpeechStarted: (ShortArray) -> Unit = {},
+    private val onSpeechFrame: (ShortArray) -> Unit = {},
+    private val onSpeechEnded: () -> Unit = {},
 ) {
     private val frameSamples = config.sampleRate * config.frameMs / 1_000
     private val preRollFrames = (config.preRollMs / config.frameMs).coerceAtLeast(1)
@@ -84,11 +87,13 @@ class SpeechSegmenter(
             if (speechStartCandidateFrames >= config.startFrames) {
                 activeStartSample = (processedSamples + frame.size - preRoll.sumOf { it.size }).coerceAtLeast(0)
                 activeFrames = preRoll.mapTo(mutableListOf()) { it.copyOf() }
+                onSpeechStarted(activeFrames!!.flattenToShortArray())
                 preRoll.clear()
                 silenceFrames = 0
             }
         } else {
             active.add(frame)
+            onSpeechFrame(frame.copyOf())
             silenceFrames = if (decision.isSpeech) 0 else silenceFrames + 1
             if (silenceFrames >= postRollFrames) finishActiveSegment()
         }
@@ -112,8 +117,16 @@ class SpeechSegmenter(
         onSegment(SpeechSegment(pcm, activeStartSample * 1_000 / config.sampleRate,
             endSample * 1_000 / config.sampleRate, decision?.noiseFloorRms ?: 0.0,
             decision?.thresholdRms ?: 0.0))
+        onSpeechEnded()
         activeFrames = null
         speechStartCandidateFrames = 0
         silenceFrames = 0
+    }
+
+    private fun List<ShortArray>.flattenToShortArray(): ShortArray {
+        val result = ShortArray(sumOf { it.size })
+        var offset = 0
+        forEach { frame -> frame.copyInto(result, offset); offset += frame.size }
+        return result
     }
 }
