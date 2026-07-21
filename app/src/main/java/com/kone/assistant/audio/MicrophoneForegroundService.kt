@@ -15,7 +15,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.kone.assistant.MainActivity
+import com.kone.assistant.audio.vad.RmsVoiceActivityDetector
+import com.kone.assistant.audio.vad.SpeechSegmenter
 import java.io.File
+import java.io.FileOutputStream
 import java.time.Instant
 
 class MicrophoneForegroundService : Service() {
@@ -40,6 +43,21 @@ class MicrophoneForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         transition(State.IDLE, "onCreate")
+        val segmenter = SpeechSegmenter(RmsVoiceActivityDetector()) { segment ->
+            val directory = File(filesDir, "speech_segments").apply { mkdirs() }
+            val output = File(directory, "speech_${System.currentTimeMillis()}_${segment.startedAtMs}-${segment.endedAtMs}.pcm")
+            FileOutputStream(output).use { stream ->
+                val bytes = ByteArray(segment.pcm.size * 2)
+                segment.pcm.forEachIndexed { index, sample ->
+                    val value = sample.toInt()
+                    bytes[index * 2] = (value and 0xff).toByte()
+                    bytes[index * 2 + 1] = ((value ushr 8) and 0xff).toByte()
+                }
+                stream.write(bytes)
+            }
+            logEvent("speech_segment file=${output.name} startMs=${segment.startedAtMs} endMs=${segment.endedAtMs} noise=${segment.noiseFloorRms} threshold=${segment.thresholdRms}")
+            // This callback is the hand-off point for a future STT engine.
+        }
         capture = AudioCapture(
             outputDirectory = File(filesDir, "foreground_audio"),
             onProgress = { },
@@ -50,6 +68,7 @@ class MicrophoneForegroundService : Service() {
                 transition(State.ERROR, "capture_error=$message")
                 stopSafely("capture_error")
             },
+            speechSegmenter = segmenter,
         )
     }
 

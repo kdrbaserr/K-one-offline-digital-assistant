@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import com.kone.assistant.audio.vad.SpeechSegmenter
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
@@ -36,6 +37,7 @@ class AudioCapture(
     private val onProgress: (CaptureProgress) -> Unit,
     private val onFinished: (CaptureResult) -> Unit,
     private val onError: (String) -> Unit,
+    private val speechSegmenter: SpeechSegmenter? = null,
 ) {
     companion object {
         const val SAMPLE_RATE = 16_000
@@ -80,6 +82,7 @@ class AudioCapture(
 
         outputDirectory.mkdirs()
         val output = File(outputDirectory, fileName)
+        speechSegmenter?.reset()
         audioRecord = recorder
         recording = true
         worker = Thread({ captureLoop(recorder, bufferSize, output) }, "pcm-capture").also { it.start() }
@@ -119,6 +122,7 @@ class AudioCapture(
                             if (abs(sample) >= 32760) clippedSamples++
                         }
                         stream.write(byteBuffer)
+                        speechSegmenter?.accept(buffer, count)
                         totalSamples += count
                         bytesWritten += byteBuffer.size
                         sumSquares += blockSquares
@@ -156,6 +160,7 @@ class AudioCapture(
             output.delete()
             onError("Kayıt hatası: ${error.message ?: error.javaClass.simpleName}")
         } finally {
+            speechSegmenter?.flush()
             recording = false
             runCatching { recorder.stop() }
             recorder.release()
