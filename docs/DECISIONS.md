@@ -28,3 +28,9 @@
 - Karar: Ham ses, ifade, kişi, numara ve kesin konum analitiğe yazılmaz.
 - Gerekçe: Kalite sinyali korunurken mahremiyet riski azalır.
 
+## ADR-005 — Ana STT runtime seçimi
+
+- Tarih: 2026-07-21
+- Durum: Kabul edildi; etiketli doğruluk korpusu gelince yeniden değerlendirilecek.
+- Karar: Ana ve tek üretim STT runtime'ı Vosk small-tr 0.3 olarak kalır.
+- Gerekçe: Aynı 60 kısa klipte en düşük p50/p95 gecikmeyi verdi; ayrıntılar `ADR-005-STT-RUNTIME.md` dosyasındadır.

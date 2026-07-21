@@ -1,0 +1,21 @@
+{
+  "runtime": {
+    "name": "whisper.cpp",
+    "version": "v1.9.1",
+    "commit": "f049fff95a089aa9969deb009cdd4892b3e74916",
+    "license": "MIT",
+    "source": "https://github.com/ggml-org/whisper.cpp"
+  },
+  "models": [
+    {
+      "name": "ggml-tiny-q5_1.bin",
+      "bytes": 32152673,
+      "sha256": "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7"
+    },
+    {
+      "name": "ggml-base-q5_1.bin",
+      "bytes": 59707625,
+      "sha256": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898"
+    }
+  ]
+}
