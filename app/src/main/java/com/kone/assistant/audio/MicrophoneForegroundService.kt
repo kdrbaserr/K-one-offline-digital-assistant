@@ -17,6 +17,8 @@ import androidx.core.content.ContextCompat
 import com.kone.assistant.MainActivity
 import com.kone.assistant.audio.vad.RmsVoiceActivityDetector
 import com.kone.assistant.audio.vad.SpeechSegmenter
+import com.kone.assistant.stt.SttEvent
+import com.kone.assistant.stt.VoskTranscriber
 import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
@@ -29,6 +31,10 @@ class MicrophoneForegroundService : Service() {
         const val ACTION_STOP = "com.kone.assistant.action.STOP_MICROPHONE"
         const val CHANNEL_ID = "microphone_capture"
         const val NOTIFICATION_ID = 1001
+        const val ACTION_STT_EVENT = "com.kone.assistant.action.STT_EVENT"
+        const val EXTRA_STT_TYPE = "stt_type"
+        const val EXTRA_STT_TEXT = "stt_text"
+        const val EXTRA_STT_VALUE = "stt_value"
         private const val TAG = "MicForegroundService"
 
         @Volatile
@@ -37,27 +43,38 @@ class MicrophoneForegroundService : Service() {
     }
 
     private lateinit var capture: AudioCapture
+    private lateinit var transcriber: VoskTranscriber
     private val lifecycleLog by lazy { File(filesDir, "lifecycle/foreground_service.log") }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         transition(State.IDLE, "onCreate")
-        val segmenter = SpeechSegmenter(RmsVoiceActivityDetector()) { segment ->
-            val directory = File(filesDir, "speech_segments").apply { mkdirs() }
-            val output = File(directory, "speech_${System.currentTimeMillis()}_${segment.startedAtMs}-${segment.endedAtMs}.pcm")
-            FileOutputStream(output).use { stream ->
-                val bytes = ByteArray(segment.pcm.size * 2)
-                segment.pcm.forEachIndexed { index, sample ->
-                    val value = sample.toInt()
-                    bytes[index * 2] = (value and 0xff).toByte()
-                    bytes[index * 2 + 1] = ((value ushr 8) and 0xff).toByte()
+        transcriber = VoskTranscriber(
+            context = this,
+            onEvent = ::publishSttEvent,
+            onMetric = ::logEvent,
+        ).also { it.load() }
+        val segmenter = SpeechSegmenter(
+            detector = RmsVoiceActivityDetector(),
+            onSegment = { segment ->
+                val directory = File(filesDir, "speech_segments").apply { mkdirs() }
+                val output = File(directory, "speech_${System.currentTimeMillis()}_${segment.startedAtMs}-${segment.endedAtMs}.pcm")
+                FileOutputStream(output).use { stream ->
+                    val bytes = ByteArray(segment.pcm.size * 2)
+                    segment.pcm.forEachIndexed { index, sample ->
+                        val value = sample.toInt()
+                        bytes[index * 2] = (value and 0xff).toByte()
+                        bytes[index * 2 + 1] = ((value ushr 8) and 0xff).toByte()
+                    }
+                    stream.write(bytes)
                 }
-                stream.write(bytes)
-            }
-            logEvent("speech_segment file=${output.name} startMs=${segment.startedAtMs} endMs=${segment.endedAtMs} noise=${segment.noiseFloorRms} threshold=${segment.thresholdRms}")
-            // This callback is the hand-off point for a future STT engine.
-        }
+                logEvent("speech_segment file=${output.name} startMs=${segment.startedAtMs} endMs=${segment.endedAtMs} noise=${segment.noiseFloorRms} threshold=${segment.thresholdRms}")
+            },
+            onSpeechStarted = transcriber::startSpeech,
+            onSpeechFrame = transcriber::acceptSpeechFrame,
+            onSpeechEnded = transcriber::finishSpeech,
+        )
         capture = AudioCapture(
             outputDirectory = File(filesDir, "foreground_audio"),
             onProgress = { },
@@ -178,6 +195,18 @@ class MicrophoneForegroundService : Service() {
         }
     }
 
+    private fun publishSttEvent(event: SttEvent) {
+        val intent = Intent(ACTION_STT_EVENT).setPackage(packageName)
+        when (event) {
+            is SttEvent.ModelLoading -> intent.putExtra(EXTRA_STT_TYPE, "model_loading").putExtra(EXTRA_STT_TEXT, event.message)
+            is SttEvent.ModelReady -> intent.putExtra(EXTRA_STT_TYPE, "model_ready").putExtra(EXTRA_STT_TEXT, "Model hazır").putExtra(EXTRA_STT_VALUE, event.loadMs)
+            is SttEvent.Partial -> intent.putExtra(EXTRA_STT_TYPE, "partial").putExtra(EXTRA_STT_TEXT, event.text)
+            is SttEvent.Final -> intent.putExtra(EXTRA_STT_TYPE, "final").putExtra(EXTRA_STT_TEXT, event.text).putExtra(EXTRA_STT_VALUE, event.latencyMs)
+            is SttEvent.Error -> intent.putExtra(EXTRA_STT_TYPE, "error").putExtra(EXTRA_STT_TEXT, event.message)
+        }
+        sendBroadcast(intent)
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         logEvent("onTaskRemoved state=$currentState")
         super.onTaskRemoved(rootIntent)
@@ -189,6 +218,7 @@ class MicrophoneForegroundService : Service() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
         currentState = State.IDLE
+        if (::transcriber.isInitialized) transcriber.close()
         super.onDestroy()
     }
 

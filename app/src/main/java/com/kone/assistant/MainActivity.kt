@@ -2,6 +2,9 @@ package com.kone.assistant
 
 import android.Manifest
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -81,6 +84,10 @@ class MainActivity : ComponentActivity() {
         var level by remember { mutableFloatStateOf(0f) }
         var elapsedMs by remember { mutableLongStateOf(0L) }
         var status by remember { mutableStateOf("Mikrofon izni bekleniyor") }
+        var modelStatus by remember { mutableStateOf("Model servisi başlatılmadı") }
+        var partialText by remember { mutableStateOf("") }
+        var finalText by remember { mutableStateOf("") }
+        var finalLatencyMs by remember { mutableLongStateOf(0L) }
         var sampleNumber by remember { mutableIntStateOf(existingSampleCount() + 1) }
         val results = remember { mutableStateListOf<CaptureResult>() }
 
@@ -121,6 +128,31 @@ class MainActivity : ComponentActivity() {
         }
 
         DisposableEffect(Unit) { onDispose { if (capture.isRecording) capture.stop() } }
+        DisposableEffect(Unit) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    val text = intent?.getStringExtra(MicrophoneForegroundService.EXTRA_STT_TEXT).orEmpty()
+                    when (intent?.getStringExtra(MicrophoneForegroundService.EXTRA_STT_TYPE)) {
+                        "model_loading" -> modelStatus = text
+                        "model_ready" -> modelStatus = "$text · ${intent.getLongExtra(MicrophoneForegroundService.EXTRA_STT_VALUE, 0)} ms"
+                        "partial" -> partialText = text
+                        "final" -> {
+                            finalText = text.ifBlank { "(anlaşılan kelime yok)" }
+                            partialText = ""
+                            finalLatencyMs = intent.getLongExtra(MicrophoneForegroundService.EXTRA_STT_VALUE, 0)
+                        }
+                        "error" -> modelStatus = "STT hatası: $text"
+                    }
+                }
+            }
+            ContextCompat.registerReceiver(
+                this@MainActivity,
+                receiver,
+                IntentFilter(MicrophoneForegroundService.ACTION_STT_EVENT),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            onDispose { unregisterReceiver(receiver) }
+        }
 
         fun startCapture(fileName: String, autoStopMs: Long? = null) {
             if (!hasPermission) {
@@ -160,6 +192,10 @@ class MainActivity : ComponentActivity() {
             level = level,
             elapsedMs = elapsedMs,
             status = status,
+            modelStatus = modelStatus,
+            partialText = partialText,
+            finalText = finalText,
+            finalLatencyMs = finalLatencyMs,
             nextSample = sampleNumber,
             results = results,
             onRequestPermission = { permissionRequested = true; permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
@@ -200,6 +236,10 @@ private fun AudioScreenContent(
     level: Float,
     elapsedMs: Long,
     status: String,
+    modelStatus: String,
+    partialText: String,
+    finalText: String,
+    finalLatencyMs: Long,
     nextSample: Int,
     results: List<CaptureResult>,
     onRequestPermission: () -> Unit,
@@ -217,6 +257,15 @@ private fun AudioScreenContent(
         ) {
             Text("16 kHz · mono · PCM 16-bit", style = MaterialTheme.typography.titleMedium)
             Text(status)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Türkçe çevrimdışı STT", style = MaterialTheme.typography.labelLarge)
+                    Text(modelStatus)
+                    Text("Geçici: ${partialText.ifBlank { "—" }}")
+                    Text("Sonuç: ${finalText.ifBlank { "—" }}")
+                    if (finalLatencyMs > 0) Text("Sonuç gecikmesi: $finalLatencyMs ms")
+                }
+            }
 
             if (!hasPermission) {
                 Button(onClick = if (permissionPermanentlyDenied) onOpenSettings else onRequestPermission) {
